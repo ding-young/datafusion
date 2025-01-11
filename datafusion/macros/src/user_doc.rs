@@ -16,6 +16,7 @@
 // under the License.
 
 extern crate proc_macro;
+use datafusion_expr::scalar_doc_sections::doc_sections_const;
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput, LitStr};
@@ -28,7 +29,7 @@ use syn::{parse_macro_input, DeriveInput, LitStr};
 /// Example:
 /// ```ignore
 /// #[user_doc(
-///     doc_section(include = "true", label = "Time and Date Functions"),
+///     doc_section(label = "Time and Date Functions"),
 ///     description = r"Converts a value to a date (`YYYY-MM-DD`).",
 ///     syntax_example = "to_date('2017-05-31', '%Y-%m-%d')",
 ///     sql_example = r#"```sql
@@ -97,9 +98,7 @@ use syn::{parse_macro_input, DeriveInput, LitStr};
 /// ```
 #[proc_macro_attribute]
 pub fn user_doc(args: TokenStream, input: TokenStream) -> TokenStream {
-    let mut doc_section_include: Option<LitStr> = None;
     let mut doc_section_lbl: Option<LitStr> = None;
-    let mut doc_section_desc: Option<LitStr> = None;
 
     let mut description: Option<LitStr> = None;
     let mut syntax_example: Option<LitStr> = None;
@@ -112,14 +111,8 @@ pub fn user_doc(args: TokenStream, input: TokenStream) -> TokenStream {
     let parser = syn::meta::parser(|meta| {
         if meta.path.is_ident("doc_section") {
             meta.parse_nested_meta(|meta| {
-                if meta.path.is_ident("include") {
-                    doc_section_include = meta.value()?.parse()?;
-                    return Ok(());
-                } else if meta.path.is_ident("label") {
+                if meta.path.is_ident("label") {
                     doc_section_lbl = meta.value()?.parse()?;
-                    return Ok(());
-                } else if meta.path.is_ident("description") {
-                    doc_section_desc = meta.value()?.parse()?;
                     return Ok(());
                 }
                 Ok(())
@@ -192,13 +185,13 @@ pub fn user_doc(args: TokenStream, input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.clone().ident;
 
-    let doc_section_include: bool = if let Some(doc_section_include) = doc_section_include
-    {
-        doc_section_include.value().parse().unwrap()
-    } else {
-        true
-    };
-
+    let label = doc_section_lbl.as_ref().unwrap().value();
+    let doc_section_option = doc_sections_const().iter().find(|ds| ds.label == label);
+    let (doc_section_include, doc_section_label, doc_section_desc) =
+        match doc_section_option {
+            Some(section) => (section.include, section.label, section.description),
+            None => (true, label.as_str(), None),
+        };
     let doc_section_description = doc_section_desc
         .map(|desc| quote! { Some(#desc)})
         .unwrap_or(quote! { None });
@@ -255,7 +248,7 @@ pub fn user_doc(args: TokenStream, input: TokenStream) -> TokenStream {
             fn doc(&self) -> Option<&datafusion_doc::Documentation> {
                 static DOCUMENTATION: std::sync::LazyLock<datafusion_doc::Documentation> =
                     std::sync::LazyLock::new(|| {
-                        datafusion_doc::Documentation::builder(datafusion_doc::DocSection { include: #doc_section_include, label: #doc_section_lbl, description: #doc_section_description },
+                        datafusion_doc::Documentation::builder(datafusion_doc::DocSection { include: #doc_section_include, label: #doc_section_label, description: #doc_section_description },
                     #description.to_string(), #syntax_example.to_string())
                         #sql_example
                         #(#alt_syntax_example)*
