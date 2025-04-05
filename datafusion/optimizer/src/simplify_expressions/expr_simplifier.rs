@@ -760,6 +760,23 @@ impl<S: SimplifyInfo> TreeNodeRewriter for Simplifier<'_, S> {
                     None => lit_bool_null(),
                 })
             }
+            // A = A --> A IS NOT NULL OR NULL
+            // A = A --> true (if A not nullable)
+            Expr::BinaryExpr(BinaryExpr {
+                left,
+                op: Eq,
+                right,
+            }) if (left == right) & !left.is_volatile() => {
+                Transformed::yes(match !info.nullable(&right)? {
+                    true => lit(true),
+                    false => Expr::BinaryExpr(BinaryExpr {
+                        left: Box::new(Expr::IsNotNull(left)),
+                        op: Or,
+                        right: Box::new(lit_bool_null()),
+                    }),
+                })
+            }
+
             // Rules for NotEq
             //
 
@@ -2150,6 +2167,17 @@ mod tests {
             let expected = col("c2").lt(col("c1"));
             assert_eq!(simplify(expr), expected);
         }
+    }
+
+    #[test]
+    fn test_simplify_eq_not_self() {
+        let expr_a = col("c2").eq(col("c2"));
+        let expr_b = col("c2_non_null").eq(col("c2_non_null"));
+        let expected_a = col("c2").is_not_null().or(lit_bool_null());
+        let expected_b = lit(true);
+
+        assert_eq!(simplify(expr_a), expected_a);
+        assert_eq!(simplify(expr_b), expected_b);
     }
 
     #[test]
