@@ -218,6 +218,10 @@ name = "sql_planner"
 
 [[bench]]
 harness = false
+name = "simplify_trivial_eq"
+
+[[bench]]
+harness = false
 name = "sql_query_with_io"
 
 [[bench]]
