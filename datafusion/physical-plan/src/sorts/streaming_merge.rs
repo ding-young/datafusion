@@ -19,15 +19,17 @@
 //! This is an order-preserving merge.
 
 use crate::metrics::BaselineMetrics;
+use crate::sorts::multi_level_merge::MultiLevelMergeBuilder;
 use crate::sorts::{
     merge::SortPreservingMergeStream,
     stream::{FieldCursorStream, RowCursorStream},
 };
-use crate::SendableRecordBatchStream;
+use crate::{SendableRecordBatchStream, SpillManager};
 use arrow::array::*;
 use arrow::datatypes::{DataType, SchemaRef};
 use datafusion_common::{internal_err, Result};
-use datafusion_execution::memory_pool::MemoryReservation;
+use datafusion_execution::disk_manager::RefCountedTempFile;
+use datafusion_execution::memory_pool::{human_readable_size, MemoryReservation};
 use datafusion_physical_expr_common::sort_expr::LexOrdering;
 
 macro_rules! primitive_merge_helper {
@@ -52,9 +54,29 @@ macro_rules! merge_helper {
     }};
 }
 
+pub struct SortedSpillFile {
+    pub file: RefCountedTempFile,
+
+    /// how much memory the largest memory batch is taking
+    pub max_record_batch_memory: usize,
+}
+
+impl std::fmt::Debug for SortedSpillFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "SortedSpillFile({:?}) takes {}",
+            self.file.path(),
+            human_readable_size(self.max_record_batch_memory)
+        )
+    }
+}
+
 #[derive(Default)]
 pub struct StreamingMergeBuilder<'a> {
     streams: Vec<SendableRecordBatchStream>,
+    sorted_spill_files: Vec<SortedSpillFile>,
+    spill_manager: Option<SpillManager>,
     schema: Option<SchemaRef>,
     expressions: Option<&'a LexOrdering>,
     metrics: Option<BaselineMetrics>,
@@ -62,6 +84,23 @@ pub struct StreamingMergeBuilder<'a> {
     fetch: Option<usize>,
     reservation: Option<MemoryReservation>,
     enable_round_robin_tie_breaker: bool,
+}
+
+impl Default for StreamingMergeBuilder<'_> {
+    fn default() -> Self {
+        Self {
+            streams: vec![],
+            sorted_spill_files: vec![],
+            spill_manager: None,
+            schema: None,
+            expressions: LexOrdering::empty(),
+            metrics: None,
+            batch_size: None,
+            fetch: None,
+            reservation: None,
+            enable_round_robin_tie_breaker: false,
+        }
+    }
 }
 
 impl<'a> StreamingMergeBuilder<'a> {
@@ -74,6 +113,19 @@ impl<'a> StreamingMergeBuilder<'a> {
 
     pub fn with_streams(mut self, streams: Vec<SendableRecordBatchStream>) -> Self {
         self.streams = streams;
+        self
+    }
+
+    pub fn with_sorted_spill_files(
+        mut self,
+        sorted_spill_files: Vec<SortedSpillFile>,
+    ) -> Self {
+        self.sorted_spill_files = sorted_spill_files;
+        self
+    }
+
+    pub fn with_spill_manager(mut self, spill_manager: SpillManager) -> Self {
+        self.spill_manager = Some(spill_manager);
         self
     }
 
@@ -122,6 +174,8 @@ impl<'a> StreamingMergeBuilder<'a> {
     pub fn build(self) -> Result<SendableRecordBatchStream> {
         let Self {
             streams,
+            sorted_spill_files,
+            spill_manager,
             schema,
             metrics,
             batch_size,
@@ -130,37 +184,43 @@ impl<'a> StreamingMergeBuilder<'a> {
             expressions,
             enable_round_robin_tie_breaker,
         } = self;
+        
+        // Early return if streams or expressions are empty
+        let checks = [
+            (
+                streams.is_empty(),
+                "Streams cannot be empty for streaming merge",
+            ),
+            (
+                expressions.is_none_or(|expr| expr.is_empty()),
+                "Sort expressions cannot be empty for streaming merge",
+            ),
+        ];
 
-        // Early return if streams or expressions are empty:
-        if streams.is_empty() {
-            return internal_err!("Streams cannot be empty for streaming merge");
+        if let Some((_, error_message)) = checks.iter().find(|(condition, _)| *condition)
+        {
+            return internal_err!("{}", error_message);
         }
         let Some(expressions) = expressions else {
             return internal_err!("Sort expressions cannot be empty for streaming merge");
         };
 
-        // Unwrapping mandatory fields
-        let schema = schema.expect("Schema cannot be empty for streaming merge");
-        let metrics = metrics.expect("Metrics cannot be empty for streaming merge");
-        let batch_size =
-            batch_size.expect("Batch size cannot be empty for streaming merge");
-        let reservation =
-            reservation.expect("Reservation cannot be empty for streaming merge");
-
-        // Special case single column comparisons with optimized cursor implementations
-        if expressions.len() == 1 {
-            let sort = expressions[0].clone();
-            let data_type = sort.expr.data_type(schema.as_ref())?;
-            downcast_primitive! {
-                data_type => (primitive_merge_helper, sort, streams, schema, metrics, batch_size, fetch, reservation, enable_round_robin_tie_breaker),
-                DataType::Utf8 => merge_helper!(StringArray, sort, streams, schema, metrics, batch_size, fetch, reservation, enable_round_robin_tie_breaker)
-                DataType::Utf8View => merge_helper!(StringViewArray, sort, streams, schema, metrics, batch_size, fetch, reservation, enable_round_robin_tie_breaker)
-                DataType::LargeUtf8 => merge_helper!(LargeStringArray, sort, streams, schema, metrics, batch_size, fetch, reservation, enable_round_robin_tie_breaker)
-                DataType::Binary => merge_helper!(BinaryArray, sort, streams, schema, metrics, batch_size, fetch, reservation, enable_round_robin_tie_breaker)
-                DataType::LargeBinary => merge_helper!(LargeBinaryArray, sort, streams, schema, metrics, batch_size, fetch, reservation, enable_round_robin_tie_breaker)
-                _ => {}
-            }
+        if !sorted_spill_files.is_empty() && spill_manager.is_some() {
+            return Ok(MultiLevelMergeBuilder::new(
+                spill_manager.unwrap(),
+                schema.unwrap(),
+                sorted_spill_files,
+                streams,
+                expressions.clone(),
+                metrics.unwrap(),
+                batch_size.unwrap(),
+                reservation.unwrap(),
+                fetch,
+                enable_round_robin_tie_breaker,
+            )
+            .create_spillable_merge_stream());
         }
+
 
         let streams = RowCursorStream::try_new(
             schema.as_ref(),
