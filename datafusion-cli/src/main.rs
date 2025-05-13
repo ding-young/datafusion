@@ -43,6 +43,8 @@ use datafusion::config::ConfigOptions;
 use datafusion::execution::disk_manager::DiskManagerConfig;
 use mimalloc::MiMalloc;
 
+use parquet::arrow::my_metric::MYMETRICS;
+
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
@@ -144,7 +146,7 @@ pub async fn main() -> ExitCode {
         println!("Error: {e}");
         return ExitCode::FAILURE;
     }
-
+    println!("{}", MYMETRICS.get());
     ExitCode::SUCCESS
 }
 

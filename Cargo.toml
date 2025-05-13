@@ -189,6 +189,17 @@ overflow-checks = false
 rpath = false
 strip = false            # Retain debug info for flamegraphs
 
+# I added to add metrics in parquet->arrow conversion
+[patch.crates-io]
+parquet = { path = "../arrow-rs/parquet" }
+arrow = { path = "../arrow-rs/arrow" }
+arrow-array = { path = "../arrow-rs/arrow-array" }
+arrow-schema = { path = "../arrow-rs/arrow-schema" }
+arrow-buffer = { path = "../arrow-rs/arrow-buffer" }
+arrow-flight = { path = "../arrow-rs/arrow-flight" }
+arrow-ipc = { path = "../arrow-rs/arrow-ipc" }
+arrow-ord = { path = "../arrow-rs/arrow-ord" }
+
 [profile.ci]
 inherits = "dev"
 incremental = false

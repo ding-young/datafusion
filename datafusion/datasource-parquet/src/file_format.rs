@@ -779,14 +779,20 @@ pub async fn fetch_parquet_metadata(
     meta: &ObjectMeta,
     size_hint: Option<usize>,
 ) -> Result<ParquetMetaData> {
+    let start = std::time::Instant::now();
+
     let file_size = meta.size;
     let fetch = ObjectStoreFetch::new(store, meta);
 
-    ParquetMetaDataReader::new()
+    let metadata = ParquetMetaDataReader::new()
         .with_prefetch_hint(size_hint)
         .load_and_finish(fetch, file_size)
         .await
-        .map_err(DataFusionError::from)
+        .map_err(DataFusionError::from);
+
+    let end = start.elapsed();
+    println!("Elapsed Time in fetch_parquet_metadata {:?}", end);
+    metadata
 }
 
 /// Read and parse the schema of the Parquet file at location `path`
