@@ -123,7 +123,7 @@ impl AsyncFileReader for ParquetFileReader {
         let start = std::time::Instant::now();
         let metadata = self.inner.get_metadata(options);
         let end = start.elapsed();
-        println!("Elapsed Time {:?}", end);
+        println!("Elapsed metadata time {:?}", end);
         metadata
     }
 }
