@@ -147,6 +147,7 @@ pub async fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
     println!("{}", MYMETRICS.get());
+    MYMETRICS.reset();
     ExitCode::SUCCESS
 }
 

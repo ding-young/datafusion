@@ -41,6 +41,7 @@ use datafusion_common::utils::get_available_parallelism;
 use datafusion_common::{DEFAULT_CSV_EXTENSION, DEFAULT_PARQUET_EXTENSION};
 
 use log::info;
+use parquet::arrow::my_metric::MYMETRICS;
 use structopt::StructOpt;
 
 // hack to avoid `default_value is meaningless for bool` errors
@@ -132,6 +133,8 @@ impl RunOpt {
         // register tables
         self.register_tables(&ctx).await?;
 
+        // reset metrics "after" register table, so that it will show whether 
+        MYMETRICS.reset();
         let mut millis = vec![];
         // run benchmark
         let mut query_results = vec![];
@@ -165,6 +168,7 @@ impl RunOpt {
             println!(
                 "Query {query_id} iteration {i} took {ms:.1} ms and returned {row_count} rows"
             );
+            println!("{}", MYMETRICS.get());
             query_results.push(QueryResult { elapsed, row_count });
         }
 
