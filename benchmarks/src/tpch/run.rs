@@ -41,7 +41,7 @@ use datafusion_common::utils::get_available_parallelism;
 use datafusion_common::{DEFAULT_CSV_EXTENSION, DEFAULT_PARQUET_EXTENSION};
 
 use log::info;
-use parquet::arrow::my_metric::MYMETRICS;
+use parquet::arrow::my_metric::{DisplayableMetrics, MYMETRICS};
 use structopt::StructOpt;
 
 // hack to avoid `default_value is meaningless for bool` errors
@@ -114,7 +114,7 @@ impl RunOpt {
             benchmark_run.start_new_case(&format!("Query {query_id}"));
             let query_run = self.benchmark_query(query_id).await?;
             for iter in query_run {
-                benchmark_run.write_iter(iter.elapsed, iter.row_count);
+                benchmark_run.write_iter_metrics(iter.elapsed, iter.row_count, iter.decode_time, iter.decompression_time);
             }
         }
         benchmark_run.maybe_write_json(self.output_path.as_ref())?;
@@ -133,12 +133,12 @@ impl RunOpt {
         // register tables
         self.register_tables(&ctx).await?;
 
-        // reset metrics "after" register table, so that it will show whether 
-        MYMETRICS.reset();
         let mut millis = vec![];
         // run benchmark
         let mut query_results = vec![];
         for i in 0..self.iterations() {
+            // reset metrics "after" register table, so that it will show whether 
+            MYMETRICS.reset();
             let start = Instant::now();
 
             let sql = &get_query_sql(query_id)?;
@@ -168,8 +168,10 @@ impl RunOpt {
             println!(
                 "Query {query_id} iteration {i} took {ms:.1} ms and returned {row_count} rows"
             );
-            println!("{}", MYMETRICS.get());
-            query_results.push(QueryResult { elapsed, row_count });
+            let my_metrics = MYMETRICS.get();
+            println!("{}", my_metrics);
+ 
+            query_results.push(QueryResult { elapsed, row_count, decode_time: my_metrics.decode_time, decompression_time: my_metrics.decompress_time });
         }
 
         let avg = millis.iter().sum::<f64>() / millis.len() as f64;
@@ -324,6 +326,8 @@ impl RunOpt {
 struct QueryResult {
     elapsed: std::time::Duration,
     row_count: usize,
+    decode_time: std::time::Duration,
+    decompression_time: std::time::Duration,
 }
 
 #[cfg(test)]

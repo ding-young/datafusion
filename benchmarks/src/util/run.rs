@@ -82,6 +82,10 @@ struct QueryIter {
     #[serde(serialize_with = "serialize_elapsed")]
     elapsed: Duration,
     row_count: usize,
+    #[serde(serialize_with = "serialize_elapsed")]
+    decode: Duration,
+    #[serde(serialize_with = "serialize_elapsed")]
+    decompress: Duration,
 }
 /// A single benchmark case
 #[derive(Debug, Serialize)]
@@ -132,7 +136,18 @@ impl BenchmarkRun {
         if let Some(idx) = self.current_case {
             self.queries[idx]
                 .iterations
-                .push(QueryIter { elapsed, row_count })
+                .push(QueryIter { elapsed, row_count, decode: Duration::default(), decompress: Duration::default() })
+        } else {
+            panic!("no cases existed yet");
+        }
+    }
+
+    /// Write a new iteration to the current case
+    pub fn write_iter_metrics(&mut self, elapsed: Duration, row_count: usize, decode_time: Duration, decompress_time: Duration) {
+        if let Some(idx) = self.current_case {
+            self.queries[idx]
+                .iterations
+                .push(QueryIter { elapsed, row_count, decode: decode_time, decompress: decompress_time })
         } else {
             panic!("no cases existed yet");
         }

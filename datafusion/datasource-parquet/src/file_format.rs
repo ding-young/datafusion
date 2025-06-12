@@ -779,7 +779,7 @@ pub async fn fetch_parquet_metadata(
     meta: &ObjectMeta,
     size_hint: Option<usize>,
 ) -> Result<ParquetMetaData> {
-    let start = std::time::Instant::now();
+    // let start = std::time::Instant::now();
 
     let file_size = meta.size;
     let fetch = ObjectStoreFetch::new(store, meta);
@@ -790,8 +790,8 @@ pub async fn fetch_parquet_metadata(
         .await
         .map_err(DataFusionError::from);
 
-    let end = start.elapsed();
-    println!("Elapsed Time in fetch_parquet_metadata {:?}", end);
+    // let end = start.elapsed();
+    // println!("Elapsed Time in fetch_parquet_metadata {:?}", end);
     metadata
 }
 

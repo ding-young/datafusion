@@ -120,10 +120,10 @@ impl AsyncFileReader for ParquetFileReader {
         options: Option<&'a ArrowReaderOptions>,
     ) -> BoxFuture<'a, parquet::errors::Result<Arc<ParquetMetaData>>> {
         // TODO(ding-young) remove code for instrumentation
-        let start = std::time::Instant::now();
+        // let start = std::time::Instant::now();
         let metadata = self.inner.get_metadata(options);
-        let end = start.elapsed();
-        println!("Elapsed metadata time {:?}", end);
+        // let end = start.elapsed();
+        // println!("Elapsed metadata time {:?}", end);
         metadata
     }
 }

@@ -25,6 +25,7 @@ use datafusion::{
 };
 use datafusion_common::exec_datafusion_err;
 use datafusion_common::instant::Instant;
+use parquet::arrow::my_metric::{DisplayableMetrics, MYMETRICS};
 use structopt::StructOpt;
 
 /// Run the clickbench benchmark
@@ -137,6 +138,9 @@ impl RunOpt {
             println!("Q{query_id}: {sql}");
 
             for i in 0..iterations {
+                // reset metrics "after" register table, so that it will show whether 
+                MYMETRICS.reset();
+
                 let start = Instant::now();
                 let results = ctx.sql(sql).await?.collect().await?;
                 let elapsed = start.elapsed();
@@ -146,7 +150,8 @@ impl RunOpt {
                 println!(
                     "Query {query_id} iteration {i} took {ms:.1} ms and returned {row_count} rows"
                 );
-                benchmark_run.write_iter(elapsed, row_count);
+                let my_metrics = MYMETRICS.get();
+                benchmark_run.write_iter_metrics(elapsed, row_count, my_metrics.decode_time, my_metrics.decompress_time);
             }
             if self.common.debug {
                 ctx.sql(sql).await?.explain(false, false)?.show().await?;
