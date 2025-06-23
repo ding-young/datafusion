@@ -25,6 +25,7 @@ use datafusion::{
 };
 use datafusion_common::exec_datafusion_err;
 use datafusion_common::instant::Instant;
+use object_store::io_metric::IOMETRICS;
 use parquet::arrow::my_metric::{DisplayableMetrics, MYMETRICS};
 use structopt::StructOpt;
 
@@ -138,8 +139,9 @@ impl RunOpt {
             println!("Q{query_id}: {sql}");
 
             for i in 0..iterations {
-                // reset metrics "after" register table, so that it will show whether 
+                // reset metrics "after" register table, so that it will show whether
                 MYMETRICS.reset();
+                IOMETRICS.reset();
 
                 let start = Instant::now();
                 let results = ctx.sql(sql).await?.collect().await?;
@@ -151,7 +153,16 @@ impl RunOpt {
                     "Query {query_id} iteration {i} took {ms:.1} ms and returned {row_count} rows"
                 );
                 let my_metrics = MYMETRICS.get();
-                benchmark_run.write_iter_metrics(elapsed, row_count, my_metrics.decode_time, my_metrics.decompress_time);
+                let io_metrics = IOMETRICS.get();
+                benchmark_run.write_iter_metrics(
+                    elapsed,
+                    row_count,
+                    my_metrics.decode_time,
+                    my_metrics.decompress_time,
+                    my_metrics.page_io_time,
+                    io_metrics.io_time,
+                    io_metrics.read_bytes,
+                );
             }
             if self.common.debug {
                 ctx.sql(sql).await?.explain(false, false)?.show().await?;

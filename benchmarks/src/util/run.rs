@@ -86,6 +86,11 @@ struct QueryIter {
     decode: Duration,
     #[serde(serialize_with = "serialize_elapsed")]
     decompress: Duration,
+    #[serde(serialize_with = "serialize_elapsed")]
+    io: Duration,
+    #[serde(serialize_with = "serialize_elapsed")]
+    real_io: Duration,
+    read_bytes: u64,
 }
 /// A single benchmark case
 #[derive(Debug, Serialize)]
@@ -134,20 +139,41 @@ impl BenchmarkRun {
     /// Write a new iteration to the current case
     pub fn write_iter(&mut self, elapsed: Duration, row_count: usize) {
         if let Some(idx) = self.current_case {
-            self.queries[idx]
-                .iterations
-                .push(QueryIter { elapsed, row_count, decode: Duration::default(), decompress: Duration::default() })
+            self.queries[idx].iterations.push(QueryIter {
+                elapsed,
+                row_count,
+                decode: Duration::default(),
+                decompress: Duration::default(),
+                io: Duration::default(),
+                real_io: Duration::default(),
+                read_bytes: 0
+            })
         } else {
             panic!("no cases existed yet");
         }
     }
 
     /// Write a new iteration to the current case
-    pub fn write_iter_metrics(&mut self, elapsed: Duration, row_count: usize, decode_time: Duration, decompress_time: Duration) {
+    pub fn write_iter_metrics(
+        &mut self,
+        elapsed: Duration,
+        row_count: usize,
+        decode_time: Duration,
+        decompress_time: Duration,
+        io_time: Duration,
+        real_io_time: Duration,
+        read_bytes: u64,
+    ) {
         if let Some(idx) = self.current_case {
-            self.queries[idx]
-                .iterations
-                .push(QueryIter { elapsed, row_count, decode: decode_time, decompress: decompress_time })
+            self.queries[idx].iterations.push(QueryIter {
+                elapsed,
+                row_count,
+                decode: decode_time,
+                decompress: decompress_time,
+                io: io_time,
+                real_io: real_io_time, 
+                read_bytes: read_bytes
+            })
         } else {
             panic!("no cases existed yet");
         }

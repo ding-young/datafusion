@@ -199,6 +199,7 @@ arrow-buffer = { path = "../arrow-rs/arrow-buffer" }
 arrow-flight = { path = "../arrow-rs/arrow-flight" }
 arrow-ipc = { path = "../arrow-rs/arrow-ipc" }
 arrow-ord = { path = "../arrow-rs/arrow-ord" }
+object_store = { path = "../arrow-rs-object-store" }
 
 [profile.ci]
 inherits = "dev"

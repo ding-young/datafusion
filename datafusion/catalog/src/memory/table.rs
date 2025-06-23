@@ -20,6 +20,7 @@
 use std::any::Any;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::fs::File;
 use std::sync::Arc;
 
 use crate::TableProvider;
@@ -33,6 +34,7 @@ use datafusion_physical_plan::{
 };
 
 use arrow::datatypes::SchemaRef;
+use arrow::ipc::{reader::StreamReader, writer::StreamWriter};
 use arrow::record_batch::RecordBatch;
 use datafusion_common::{not_impl_err, plan_err, Constraints, DFSchema, SchemaExt};
 use datafusion_common_runtime::JoinSet;
@@ -194,6 +196,25 @@ impl MemTable {
             return MemTable::try_new(Arc::clone(&schema), output_partitions);
         }
         MemTable::try_new(Arc::clone(&schema), data)
+    }
+
+    /// Store batches into arrow ipc file
+    pub async fn store(&self, table_name: &str) {
+        let path =
+            "/home/seoyoung/datafusion/datafusion/data/arrow/".to_owned() + table_name;
+        let mut ipc_file = File::create(path).unwrap();
+        // create a new writer, the schema must be known in advance
+        let mut writer = StreamWriter::try_new(ipc_file, &self.schema).unwrap();
+        // write each batch to the underlying stream
+        for partition in &self.batches {
+            let guard = partition.read().await; // RwLock read guard
+            for batch in guard.iter() {
+                writer.write(batch).unwrap();
+            }
+        }
+
+        // When all batches are written, call finish to flush all buffers
+        writer.finish().unwrap();
     }
 }
 

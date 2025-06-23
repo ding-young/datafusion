@@ -38,10 +38,13 @@ class QueryResult:
     row_count: int
     decode: float = 0.0
     decompress: float = 0.0
+    io: float = 0.0
+    real_io: float = 0.0
+    read_bytes: int = 0
 
     @classmethod
     def load_from(cls, data: Dict[str, Any]) -> QueryResult:
-        return cls(elapsed=data["elapsed"], row_count=data["row_count"], decode=data["decode"], decompress=data["decompress"],)
+        return cls(elapsed=data["elapsed"], row_count=data["row_count"], decode=data["decode"], decompress=data["decompress"], io=data["io"], real_io=data["real_io"], read_bytes=data["read_bytes"])
 
 
 @dataclass
@@ -121,6 +124,8 @@ def summary_single(
     # added for metrics
     table.add_column("Baseline Decode Time", justify="right", style="dim")
     table.add_column("Baseline Decompress Time", justify="right", style="dim")
+    table.add_column("Baseline IO Time", justify="right", style="dim")
+    table.add_column("Baseline Bytes Read", justify="right", style="dim")
 
     faster_count = 0
     slower_count = 0
@@ -139,6 +144,8 @@ def summary_single(
             f"{baseline_result.execution_time:.2f}ms",
             f"{baseline_result.iterations[0].decode:.2f}ms",
             f"{baseline_result.iterations[0].decompress:.2f}ms",
+            f"{baseline_result.iterations[0].real_io:.2f}ms",
+            f"{baseline_result.iterations[0].read_bytes:.2f}ms",
         )
 
     console.print(table)
@@ -179,8 +186,11 @@ def compare(
     # added for metrics
     table.add_column("Baseline Decode Time", justify="right", style="dim")
     table.add_column("Baseline Decompress Time", justify="right", style="dim")
-    table.add_column("Comparision Decode Time", justify="right", style="dim")
-    table.add_column("Comparison Decompress Time", justify="right", style="dim")
+    table.add_column("Baseline IO Time", justify="right", style="dim")
+    table.add_column("Baseline Bytes Read", justify="right", style="dim")
+
+    # table.add_column("Comparision Decode Time", justify="right", style="dim")
+    # table.add_column("Comparison Decompress Time", justify="right", style="dim")
 
     faster_count = 0
     slower_count = 0
@@ -214,8 +224,10 @@ def compare(
             change_text,
             f"{baseline_result.iterations[0].decode:.2f}ms",
             f"{baseline_result.iterations[0].decompress:.2f}ms",
-            f"{comparison_result.iterations[0].decode:.2f}ms",
-            f"{comparison_result.iterations[0].decompress:.2f}ms",
+            # f"{comparison_result.iterations[0].decode:.2f}ms",
+            # f"{comparison_result.iterations[0].decompress:.2f}ms",
+            f"{baseline_result.iterations[0].real_io:.2f}ms",
+            f"{baseline_result.iterations[0].read_bytes:.2f}ms",
         )
 
     console.print(table)

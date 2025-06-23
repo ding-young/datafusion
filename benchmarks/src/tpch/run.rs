@@ -42,6 +42,7 @@ use datafusion_common::{DEFAULT_CSV_EXTENSION, DEFAULT_PARQUET_EXTENSION};
 
 use log::info;
 use parquet::arrow::my_metric::{DisplayableMetrics, MYMETRICS};
+use object_store::io_metric::IOMETRICS;
 use structopt::StructOpt;
 
 // hack to avoid `default_value is meaningless for bool` errors
@@ -79,6 +80,10 @@ pub struct RunOpt {
     #[structopt(short = "m", long = "mem-table")]
     mem_table: bool,
 
+    /// Save MemTable to ipc files before executing the query
+    #[structopt(long = "write-ipc")]
+    mem_table_write: bool,
+
     /// Path to machine readable output file
     #[structopt(parse(from_os_str), short = "o", long = "output")]
     output_path: Option<PathBuf>,
@@ -114,7 +119,15 @@ impl RunOpt {
             benchmark_run.start_new_case(&format!("Query {query_id}"));
             let query_run = self.benchmark_query(query_id).await?;
             for iter in query_run {
-                benchmark_run.write_iter_metrics(iter.elapsed, iter.row_count, iter.decode_time, iter.decompression_time);
+                benchmark_run.write_iter_metrics(
+                    iter.elapsed,
+                    iter.row_count,
+                    iter.decode_time,
+                    iter.decompression_time,
+                    iter.io_time,
+                    iter.real_io_time,
+                    iter.read_bytes
+                );
             }
         }
         benchmark_run.maybe_write_json(self.output_path.as_ref())?;
@@ -127,6 +140,13 @@ impl RunOpt {
             .config()?
             .with_collect_statistics(!self.disable_statistics);
         config.options_mut().optimizer.prefer_hash_join = self.prefer_hash_join;
+
+        for config_entry in config.options().entries() {
+            if config_entry.key.starts_with("datafusion.execution.parquet") {
+                println!("{} = {:?}", config_entry.key, config_entry.value);
+            }
+        }
+
         let rt_builder = self.common.runtime_env_builder()?;
         let ctx = SessionContext::new_with_config_rt(config, rt_builder.build_arc()?);
 
@@ -137,8 +157,9 @@ impl RunOpt {
         // run benchmark
         let mut query_results = vec![];
         for i in 0..self.iterations() {
-            // reset metrics "after" register table, so that it will show whether 
+            // reset metrics "after" register table, so that it will show whether
             MYMETRICS.reset();
+            IOMETRICS.reset();
             let start = Instant::now();
 
             let sql = &get_query_sql(query_id)?;
@@ -169,9 +190,21 @@ impl RunOpt {
                 "Query {query_id} iteration {i} took {ms:.1} ms and returned {row_count} rows"
             );
             let my_metrics = MYMETRICS.get();
+            let io_metrics = IOMETRICS.get();
             println!("{}", my_metrics);
- 
-            query_results.push(QueryResult { elapsed, row_count, decode_time: my_metrics.decode_time, decompression_time: my_metrics.decompress_time });
+            println!("{}", io_metrics);
+            let true_decode_time = my_metrics.decode_time
+                - my_metrics.page_io_time
+                - my_metrics.decompress_time;
+            query_results.push(QueryResult {
+                elapsed,
+                row_count,
+                decode_time: true_decode_time,
+                decompression_time: my_metrics.decompress_time,
+                io_time: my_metrics.page_io_time,
+                real_io_time: io_metrics.io_time, 
+                read_bytes: io_metrics.read_bytes, 
+            });
         }
 
         let avg = millis.iter().sum::<f64>() / millis.len() as f64;
@@ -195,10 +228,16 @@ impl RunOpt {
                     table,
                     start.elapsed().as_millis()
                 );
+
+                // To experiment reading arrow IPC as datasource store table
+                if self.mem_table_write {
+                    memtable.store(table).await;
+                }
                 ctx.register_table(*table, Arc::new(memtable))?;
             } else {
                 ctx.register_table(*table, table_provider)?;
             }
+            println!("============Register[{}]============", table);
         }
         Ok(())
     }
@@ -328,6 +367,9 @@ struct QueryResult {
     row_count: usize,
     decode_time: std::time::Duration,
     decompression_time: std::time::Duration,
+    io_time: std::time::Duration,
+    real_io_time: std::time::Duration,
+    read_bytes: u64,
 }
 
 #[cfg(test)]
