@@ -139,15 +139,15 @@ struct Args {
     disk_limit: Option<usize>,
 }
 
-#[tokio::main(worker_threads = 1)]
+#[tokio::main(worker_threads = 2)]
 /// Calls [`main_inner`], then handles printing errors and returning the correct exit code
 pub async fn main() -> ExitCode {
     if let Err(e) = main_inner().await {
         println!("Error: {e}");
         return ExitCode::FAILURE;
     }
-    println!("{}", MYMETRICS.get());
-    MYMETRICS.reset();
+    // println!("{}", MYMETRICS.get());
+    // MYMETRICS.reset();
     ExitCode::SUCCESS
 }
 
