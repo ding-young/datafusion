@@ -2007,6 +2007,7 @@ dependencies = [
  "arrow-ipc",
  "base64 0.22.1",
  "chrono",
+ "criterion",
  "half",
  "hashbrown 0.14.5",
  "hex",
