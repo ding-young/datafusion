@@ -164,6 +164,10 @@ impl SpillManager {
         for batch in batches {
             in_progress_file.append_batch(&batch)?;
 
+            // For reproducer
+            println!("batch.get_actually_used_size:{}, batch.get_array_memory_size:{}", 
+                batch.get_actually_used_size(), batch.get_array_memory_size());
+
             max_record_batch_size =
                 max_record_batch_size.max(batch.get_actually_used_size());
         }
