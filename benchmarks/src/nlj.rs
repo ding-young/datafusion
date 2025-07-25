@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::util::{BenchmarkRun, CommonOpt, QueryResult};
+use crate::util::{BenchmarkRun, CommonOpt, QueryResult, print_memory_stats};
 use datafusion::{error::Result, prelude::SessionContext};
 use datafusion_common::instant::Instant;
 use datafusion_common::{exec_datafusion_err, exec_err, DataFusionError};
@@ -42,7 +42,7 @@ use structopt::StructOpt;
 pub struct RunOpt {
     /// Query number (between 1 and 10). If not specified, runs all queries
     #[structopt(short, long)]
-    query: Option<usize>,
+    pub query: Option<usize>,
 
     /// Common options
     #[structopt(flatten)]
@@ -204,12 +204,14 @@ impl RunOpt {
             ));
         }
 
+        let mut millis = vec![];
         for i in 0..self.common.iterations {
             let start = Instant::now();
             let df = ctx.sql(sql).await?;
             let batches = df.collect().await?;
             let elapsed = start.elapsed();
-
+            let ms = elapsed.as_secs_f64() * 1000.0;
+            millis.push(ms);
             let row_count = batches.iter().map(|b| b.num_rows()).sum();
             println!(
                     "Query {query_name} iteration {i} returned {row_count} rows in {elapsed:?}"
@@ -217,6 +219,12 @@ impl RunOpt {
 
             query_results.push(QueryResult { elapsed, row_count });
         }
+
+        let avg = millis.iter().sum::<f64>() / millis.len() as f64;
+        println!("Query {query_name} avg time: {avg:.2} ms");
+
+        // Print memory usage stats using mimalloc (only when compiled with --features mimalloc_extended)
+        print_memory_stats();
 
         Ok(query_results)
     }

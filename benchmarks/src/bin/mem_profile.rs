@@ -25,9 +25,7 @@ use std::{
 use structopt::StructOpt;
 
 use datafusion_benchmarks::{
-    clickbench,
-    h2o::{self, AllQueries},
-    imdb, sort_tpch, tpch,
+    clickbench, h2o::{self, AllQueries}, imdb, nlj, sort_tpch, tpch
 };
 
 #[derive(Debug, StructOpt)]
@@ -38,6 +36,7 @@ enum Options {
     Imdb(imdb::RunOpt),
     SortTpch(sort_tpch::RunOpt),
     Tpch(tpch::RunOpt),
+    Nlj(nlj::RunOpt),
 }
 
 #[tokio::main]
@@ -81,6 +80,10 @@ pub async fn main() -> Result<()> {
         Options::Tpch(opt) => match opt.query {
             Some(query_id) => query_id..=query_id,
             None => tpch::TPCH_QUERY_START_ID..=tpch::TPCH_QUERY_END_ID,
+        },
+        Options::Nlj(opt) => match opt.query {
+            Some(query_id) => query_id..=query_id,
+            None => 1..=10,
         },
     };
 
