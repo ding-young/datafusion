@@ -338,6 +338,7 @@ impl ExternalSorter {
         self.merge_reservation.free();
 
         if self.spilled_before() {
+            println!("[sort] spilled before");
             // Sort `in_mem_batches` and spill it first. If there are many
             // `in_mem_batches` and the memory limit is almost reached, merging
             // them with the spilled files at the same time might cause OOM.
@@ -356,6 +357,7 @@ impl ExternalSorter {
                 .with_reservation(self.merge_reservation.new_empty())
                 .build()
         } else {
+            println!("[sort] not spilled before");
             self.in_mem_sort_stream(self.metrics.baseline.clone())
         }
     }
@@ -522,6 +524,7 @@ impl ExternalSorter {
 
         let mut sorted_stream =
             self.in_mem_sort_stream(self.metrics.baseline.intermediate())?;
+        println!("in_mem_sort_stream ok");
         // After `in_mem_sort_stream()` is constructed, all `in_mem_batches` is taken
         // to construct a globally sorted stream.
         if !self.in_mem_batches.is_empty() {
@@ -535,9 +538,12 @@ impl ExternalSorter {
         let mut globally_sorted_batches: Vec<RecordBatch> = vec![];
 
         while let Some(batch) = sorted_stream.next().await {
+            println!("batch?");
             let batch = batch?;
+            println!("batch? ok");
             let sorted_size = get_reserved_byte_for_record_batch(&batch);
             if self.reservation.try_grow(sorted_size).is_err() {
+                println!("try_grow fail so consume and spill together");
                 // Although the reservation is not enough, the batch is
                 // already in memory, so it's okay to combine it with previously
                 // sorted batches, and spill together.
@@ -553,11 +559,15 @@ impl ExternalSorter {
         // upcoming `self.reserve_memory_for_merge()` may fail due to insufficient memory.
         drop(sorted_stream);
 
+        println!("try to consume and spill together");
         self.consume_and_spill_append(&mut globally_sorted_batches)
             .await?;
+        println!("consume and spill together");
         self.spill_finish().await?;
 
         // Sanity check after spilling
+        // 여기서 memory가 애초에 부족했으면 in mem batch를 미리 clear 했기 때문에 괜찮은데, 
+        // 메모리가 넉넉했으면 이 함수 진입 안해서 spill 이 안 났기 때문에 너무 많아
         let buffers_cleared_property =
             self.in_mem_batches.is_empty() && globally_sorted_batches.is_empty();
         if !buffers_cleared_property {
@@ -659,6 +669,7 @@ impl ExternalSorter {
 
         // If less than sort_in_place_threshold_bytes, concatenate and sort in place
         if self.reservation.size() < self.sort_in_place_threshold_bytes {
+            println!("less than sort_in_place_threshold_bytes"); // not here
             // Concatenate memory batches together and sort
             let batch = concat_batches(&self.schema, &self.in_mem_batches)?;
             self.in_mem_batches.clear();
@@ -669,7 +680,8 @@ impl ExternalSorter {
             return self.sort_batch_stream(batch, metrics, reservation);
         }
 
-        let streams = std::mem::take(&mut self.in_mem_batches)
+        println!("[in_mem_batches len] {}", self.in_mem_batches.len());
+        let streams: Vec<_> = std::mem::take(&mut self.in_mem_batches)
             .into_iter()
             .map(|batch| {
                 let metrics = self.metrics.baseline.intermediate();
@@ -680,7 +692,7 @@ impl ExternalSorter {
                 Ok(spawn_buffered(input, 1))
             })
             .collect::<Result<_>>()?;
-
+        println!("[batch size] {} [streams_len]{}", self.batch_size, streams.len());
         StreamingMergeBuilder::new()
             .with_streams(streams)
             .with_schema(Arc::clone(&self.schema))
@@ -717,9 +729,9 @@ impl ExternalSorter {
             metrics.record_output(sorted.num_rows());
             drop(batch);
             drop(reservation);
+            println!("sort_batch_stream ok");
             Ok(sorted)
         });
-
         Ok(Box::pin(RecordBatchStreamAdapter::new(schema, stream)))
     }
 
@@ -728,6 +740,7 @@ impl ExternalSorter {
     /// left for the in memory sort/merge.
     fn reserve_memory_for_merge(&mut self) -> Result<()> {
         // Reserve headroom for next merge sort
+        println!("try to reserve memory for merge");
         if self.runtime.disk_manager.tmp_files_enabled() {
             let size = self.sort_spill_reservation_bytes;
             if self.merge_reservation.size() != size {
@@ -749,14 +762,20 @@ impl ExternalSorter {
         let size = get_reserved_byte_for_record_batch(input);
 
         match self.reservation.try_grow(size) {
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                println!("reservation Ok");
+                Ok(())
+            },
             Err(e) => {
                 if self.in_mem_batches.is_empty() {
+                    println!("in_mem_batches is empty");
                     return Err(Self::err_with_oom_context(e));
                 }
 
                 // Spill and try again.
+                println!("sort_and_spill_in_mem_batch (in reserve_memory_for_batch_and_maybe_spill)");
                 self.sort_and_spill_in_mem_batches().await?;
+                println!("sort_and_spill_in_mem_batch ok");
                 self.reservation
                     .try_grow(size)
                     .map_err(Self::err_with_oom_context)
@@ -768,12 +787,18 @@ impl ExternalSorter {
     /// This is meant to be used with DataFusionError::ResourcesExhausted only.
     fn err_with_oom_context(e: DataFusionError) -> DataFusionError {
         match e {
-            DataFusionError::ResourcesExhausted(_) => e.context(
+            DataFusionError::ResourcesExhausted(_) => {
+                let e = e.context(
                 "Not enough memory to continue external sort. \
                     Consider increasing the memory limit, or decreasing sort_spill_reservation_bytes"
-            ),
+                );
+                panic!("No way...");
+            },
             // This is not an OOM error, so just return it as is.
-            _ => e,
+            _ => {
+                println!("what the shit happend");
+                e
+            },
         }
     }
 }
@@ -813,14 +838,16 @@ pub fn sort_batch(
     expressions: &LexOrdering,
     fetch: Option<usize>,
 ) -> Result<RecordBatch> {
+    println!("sort_batch");
     let sort_columns = expressions
         .iter()
         .map(|expr| expr.evaluate_to_sort_column(batch))
         .collect::<Result<Vec<_>>>()?;
 
     let indices = lexsort_to_indices(&sort_columns, fetch)?;
+    println!("lexsort_to_indices ok");
     let mut columns = take_arrays(batch.columns(), &indices, None)?;
-
+    println!("take_arrays ok");
     // The columns may be larger than the unsorted columns in `batch` especially for variable length
     // data types due to exponential growth when building the sort columns. We shrink the columns
     // to prevent memory reservation failures, as well as excessive memory allocation when running

@@ -176,6 +176,7 @@ impl RowCursorStream {
         rows.clear();
 
         self.converter.append(&mut rows, &cols)?;
+        println!("try convert_batch {}", self.converter.size());
         self.reservation.try_resize(self.converter.size())?;
 
         let rows = Arc::new(rows);
@@ -184,6 +185,7 @@ impl RowCursorStream {
 
         // track the memory in the newly created Rows.
         let mut rows_reservation = self.reservation.new_empty();
+        println!("try convert_batch row reservation {}", rows.size());
         rows_reservation.try_grow(rows.size())?;
         Ok(RowValues::new(rows, rows_reservation))
     }
@@ -203,7 +205,9 @@ impl PartitionedStream for RowCursorStream {
     ) -> Poll<Option<Self::Output>> {
         Poll::Ready(ready!(self.streams.poll_next(cx, stream_idx)).map(|r| {
             r.and_then(|batch| {
+                println!("try row cursor convert_batch");
                 let cursor = self.convert_batch(&batch, stream_idx)?;
+                println!("try row cursor convert_batch");
                 Ok((cursor, batch))
             })
         }))
@@ -273,7 +277,9 @@ impl<T: CursorArray> PartitionedStream for FieldCursorStream<T> {
     ) -> Poll<Option<Self::Output>> {
         Poll::Ready(ready!(self.streams.poll_next(cx, stream_idx)).map(|r| {
             r.and_then(|batch| {
+                println!("try to convert_batch as cursor");
                 let cursor = self.convert_batch(&batch)?;
+                println!("try to convert_batch as cursor succeeds");
                 Ok((cursor, batch))
             })
         }))

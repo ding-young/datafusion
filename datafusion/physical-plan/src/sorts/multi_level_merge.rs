@@ -259,6 +259,7 @@ impl MultiLevelMergeBuilder {
                 // as we are not holding the memory for them
                 let mut sorted_streams = mem::take(&mut self.sorted_streams);
 
+                println!("length of in mem sorted streams {}, spill streams {}", sorted_streams.len(), self.sorted_spill_files.len());
                 let (sorted_spill_files, buffer_size) = self
                     .get_sorted_spill_files_to_merge(
                         2,
@@ -328,10 +329,12 @@ impl MultiLevelMergeBuilder {
             // (reserving memory for the biggest batch in each stream)
             // TODO - avoid this hack as this can be broken easily when `SortPreservingMergeStream`
             //        changes the implementation to use more/less memory
+            println!("create new merge sort with bypass mempool");
             builder = builder.with_bypass_mempool();
         } else {
             // If we are only merging in-memory streams, we need to use the memory reservation
             // because we don't know the maximum size of the batches in the streams
+            println!("create new merge sort for only in-mem streams");
             builder = builder.with_reservation(self.reservation.new_empty());
         }
 
@@ -377,7 +380,7 @@ impl MultiLevelMergeBuilder {
                                 reservation,
                             );
                         }
-
+                        println!("We failed to try multi level merge");
                         return Err(err);
                     }
 
@@ -392,7 +395,7 @@ impl MultiLevelMergeBuilder {
             .sorted_spill_files
             .drain(..number_of_spills_to_read_for_current_phase)
             .collect::<Vec<_>>();
-
+        println!("[get_sorted_spill_files_to_merge] s:{number_of_spills_to_read_for_current_phase} b:{buffer_len}");
         Ok((spills, buffer_len))
     }
 }

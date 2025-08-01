@@ -31,7 +31,7 @@ use crate::RecordBatchStream;
 use arrow::datatypes::SchemaRef;
 use arrow::record_batch::RecordBatch;
 use datafusion_common::Result;
-use datafusion_execution::memory_pool::MemoryReservation;
+use datafusion_execution::memory_pool::{human_readable_size, MemoryReservation};
 
 use futures::Stream;
 
@@ -194,7 +194,10 @@ impl<C: CursorValues> SortPreservingMergeStream<C> {
 
         match futures::ready!(self.streams.poll_next(cx, idx)) {
             None => Poll::Ready(Ok(())),
-            Some(Err(e)) => Poll::Ready(Err(e)),
+            Some(Err(e)) => {
+                println!("poll_next err {}", e);
+                Poll::Ready(Err(e))
+            },
             Some(Ok((cursor, batch))) => {
                 self.cursors[idx] = Some(Cursor::new(cursor));
                 Poll::Ready(self.in_progress.push_batch(idx, batch))
@@ -216,11 +219,15 @@ impl<C: CursorValues> SortPreservingMergeStream<C> {
         if self.loser_tree.is_empty() {
             // Manual indexing since we're iterating over the vector and shrinking it in the loop
             let mut idx = 0;
+            println!("self.uninitiated_partitions {}", self.uninitiated_partitions.len());
+            let expected = self.uninitiated_partitions.len() * 253800;
+            println!("expected mem consumption {}", human_readable_size(expected));
             while idx < self.uninitiated_partitions.len() {
                 let partition_idx = self.uninitiated_partitions[idx];
                 match self.maybe_poll_stream(cx, partition_idx) {
                     Poll::Ready(Err(e)) => {
                         self.aborted = true;
+                        println!("maybe_poll_stream err");
                         return Poll::Ready(Some(Err(e)));
                     }
                     Poll::Pending => {
@@ -256,6 +263,7 @@ impl<C: CursorValues> SortPreservingMergeStream<C> {
                 // There is no need to reschedule ourselves eagerly.
                 return Poll::Pending;
             }
+            println!("loser tree init done");
         }
 
         // NB timer records time taken on drop, so there are no

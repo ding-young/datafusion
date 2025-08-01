@@ -70,8 +70,10 @@ impl BatchBuilder {
 
     /// Append a new batch in `stream_idx`
     pub fn push_batch(&mut self, stream_idx: usize, batch: RecordBatch) -> Result<()> {
+        println!("try push_batch at {stream_idx} mem {}", get_record_batch_memory_size(&batch));
         self.reservation
             .try_grow(get_record_batch_memory_size(&batch))?;
+        println!("success push_batch");
         let batch_idx = self.batches.len();
         self.batches.push((stream_idx, batch));
         self.cursors[stream_idx] = BatchCursor {

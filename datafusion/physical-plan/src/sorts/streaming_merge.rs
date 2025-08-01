@@ -190,6 +190,7 @@ impl<'a> StreamingMergeBuilder<'a> {
 
         if !sorted_spill_files.is_empty() {
             // Unwrapping mandatory fields
+            println!("sorted spill file is empty");
             let schema = schema.expect("Schema cannot be empty for streaming merge");
             let metrics = metrics.expect("Metrics cannot be empty for streaming merge");
             let batch_size =
@@ -248,6 +249,7 @@ impl<'a> StreamingMergeBuilder<'a> {
             streams,
             reservation.new_empty(),
         )?;
+        println!("row cursor stream ok");
         Ok(Box::pin(SortPreservingMergeStream::new(
             Box::new(streams),
             schema,
