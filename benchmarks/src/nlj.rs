@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::util::{BenchmarkRun, CommonOpt, QueryResult};
+use crate::util::{BenchmarkRun, CommonOpt, QueryResult, print_memory_stats};
 use datafusion::physical_plan::execute_stream;
 use datafusion::{error::Result, prelude::SessionContext};
 use datafusion_common::instant::Instant;
@@ -45,7 +45,7 @@ use futures::StreamExt;
 pub struct RunOpt {
     /// Query number (between 1 and 10). If not specified, runs all queries
     #[structopt(short, long)]
-    query: Option<usize>,
+    pub query: Option<usize>,
 
     /// Common options
     #[structopt(flatten)]
@@ -61,7 +61,7 @@ pub struct RunOpt {
 /// Each query's comment includes:
 ///   - Left (build) side row count × Right (probe) side row count
 ///   - Join predicate selectivity (1% means the output size is 1% * input size)
-const NLJ_QUERIES: &[&str] = &[
+pub const NLJ_QUERIES: &[&str] = &[
     // Q1: INNER 10K x 10K | LOW 0.1%
     r#"
         SELECT *
@@ -207,19 +207,26 @@ impl RunOpt {
             ));
         }
 
+        let mut millis = vec![];
         for i in 0..self.common.iterations {
             let start = Instant::now();
 
             let row_count = Self::execute_sql_without_result_buffering(sql, ctx).await?;
 
             let elapsed = start.elapsed();
-
+            let ms = elapsed.as_secs_f64() * 1000.0;
+            millis.push(ms);
             println!(
                     "Query {query_name} iteration {i} returned {row_count} rows in {elapsed:?}"
                 );
 
             query_results.push(QueryResult { elapsed, row_count });
         }
+        let avg = millis.iter().sum::<f64>() / millis.len() as f64;
+        println!("Query {query_name} avg time: {avg:.2} ms");
+
+        // Print memory stats using mimalloc (only when compiled with --features mimalloc_extended)
+        print_memory_stats();
 
         Ok(query_results)
     }

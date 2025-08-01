@@ -26,9 +26,7 @@ use std::{
 use structopt::StructOpt;
 
 use datafusion_benchmarks::{
-    clickbench,
-    h2o::{self, AllQueries},
-    imdb, sort_tpch, tpch,
+    clickbench, h2o::{self, AllQueries}, imdb, nlj, sort_tpch, tpch
 };
 
 #[derive(Debug, StructOpt)]
@@ -50,6 +48,7 @@ enum Options {
     Imdb(imdb::RunOpt),
     SortTpch(sort_tpch::RunOpt),
     Tpch(tpch::RunOpt),
+    Nlj(nlj::RunOpt),
 }
 
 #[tokio::main]
@@ -94,6 +93,10 @@ pub async fn main() -> Result<()> {
             Some(query_id) => query_id..=query_id,
             None => tpch::TPCH_QUERY_START_ID..=tpch::TPCH_QUERY_END_ID,
         },
+        Options::Nlj(opt) => match opt.query {
+            Some(query_id) => query_id..=query_id,
+            None => 1..=nlj::NLJ_QUERIES.len(),
+        },
     };
 
     // 2. Prebuild dfbench binary so that memory does not blow up due to build process
@@ -116,7 +119,7 @@ pub async fn main() -> Result<()> {
     // 3. Create a new process per each benchmark query and print summary
     // Find position of subcommand to collect args for dfbench
     let args: Vec<_> = env::args().collect();
-    let subcommands = ["tpch", "clickbench", "h2o", "imdb", "sort-tpch"];
+    let subcommands = ["tpch", "clickbench", "h2o", "imdb", "sort-tpch", "nlj"];
     let sub_pos = args
         .iter()
         .position(|s| subcommands.iter().any(|&cmd| s == cmd))
