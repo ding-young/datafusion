@@ -194,6 +194,18 @@ strip = false            # Retain debug info for flamegraphs
 inherits = "dev"
 incremental = false
 
+[patch.crates-io]
+arrow = { path = "../arrow-rs/arrow" }
+arrow-array = { path = "../arrow-rs/arrow-array" }
+arrow-buffer = { path = "../arrow-rs/arrow-buffer" }
+arrow-flight = { path = "../arrow-rs/arrow-flight" }
+arrow-schema = { path = "../arrow-rs/arrow-schema" }
+arrow-ipc = { path = "../arrow-rs/arrow-ipc" }
+arrow-json = { path = "../arrow-rs/arrow-json" }
+arrow-csv = { path = "../arrow-rs/arrow-csv" }
+arrow-ord = { path = "../arrow-rs/arrow-ord" }
+parquet = { path = "../arrow-rs/parquet" }  
+
 # ci turns off debug info, etc. for dependencies to allow for smaller binaries making caching more effective
 [profile.ci.package."*"]
 debug = false
