@@ -762,3 +762,47 @@ async fn test_single_mode_aggregate_with_spill() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn df_list_of_dict_should_error() -> Result<()> {
+    // build List<Dictionary<Int8,Utf8>>
+    use arrow::array::ListBuilder;
+    use arrow::datatypes::Int8Type;
+    use arrow::array::StringDictionaryBuilder;
+
+    let mut dict_builder = StringDictionaryBuilder::<Int8Type>::new();
+    for s in ["foo","bar","baz","foo"] { dict_builder.append(s)?; }
+    let mut list_builder = ListBuilder::new(dict_builder);
+    list_builder.values().append("foo")?; 
+    list_builder.values().append("bar")?;
+    list_builder.append(true);
+    list_builder.values().append("baz")?; 
+    list_builder.append(true);
+    let list_dict = list_builder.finish();
+
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("a", DataType::Int32, false),
+        Field::new("c", list_dict.data_type().clone(), false),
+    ]));
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![Arc::new(Int32Array::from(vec![1,2])), Arc::new(list_dict)],
+    )?;
+
+    let ctx = SessionContext::new();
+    ctx.register_batch("x", batch)?;
+
+    // GROUP BY forces Aggregate (RowConverter pass)
+    let df = ctx.sql(
+        r#"
+        SELECT c, COUNT(*) AS cnt
+        FROM   x
+        GROUP  BY c
+        "#,
+    ).await?;
+
+    // df.collect().await?;
+    df.show().await?;
+
+    Ok(())
+}
